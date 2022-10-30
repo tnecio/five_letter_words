@@ -10,6 +10,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use crate::backtracking_brute::{backtracking_brute, backtracking_brute_parallelized};
+use crate::smart_brute::smart_brute;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -26,7 +27,16 @@ fn main() {
             .filter(|w| is_unique_5_letter(w))
             .collect();
 
-    backtracking_brute_parallelized(words);
+    if args.len() > 2 {
+        match &args[2].as_str() {
+            &"brute" => backtracking_brute(words),
+            &"brute_par" => backtracking_brute_parallelized(words),
+            &"smart_brute_par" => smart_brute(words),
+            _ => smart_brute(words)
+        };
+    } else {
+        smart_brute(words);
+    }
 }
 
 fn unpack_word<T>(line: Result<String, T>) -> String {
