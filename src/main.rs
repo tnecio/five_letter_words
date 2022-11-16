@@ -1,9 +1,12 @@
+extern crate prettytable;
+
 mod backtracking_brute;
+mod dancing_links;
 mod smart_brute;
 mod word_reprs;
 
-use std::env;
 use std::collections::HashSet;
+use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -11,6 +14,7 @@ use std::path::Path;
 
 use crate::backtracking_brute::{backtracking_brute, backtracking_brute_parallelized};
 use crate::smart_brute::smart_brute;
+use crate::dancing_links::dlx_words;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,28 +23,32 @@ fn main() {
         Err(why) => panic!("couldn't open {}: {}", path.display(), why),
         Ok(file) => file,
     };
-    
-    let words: Vec<_> =
-        BufReader::new(file)
-            .lines()
-            .map(|l| unpack_word(l))
-            .filter(|w| is_unique_5_letter(w))
-            .collect();
+
+    let words: Vec<_> = BufReader::new(file)
+        .lines()
+        .map(|l| unpack_word(l))
+        .filter(|w| is_unique_5_letter(w))
+        .collect();
 
     if args.len() > 2 {
         match &args[2].as_str() {
             &"brute" => backtracking_brute(words),
             &"brute_par" => backtracking_brute_parallelized(words),
             &"smart_brute_par" => smart_brute(words),
-            _ => smart_brute(words)
+            &"dlx" => dlx_words(words),
+            _ => dlx_words(words),
         };
     } else {
-        smart_brute(words);
+        dlx_words(words);
     }
 }
 
 fn unpack_word<T>(line: Result<String, T>) -> String {
-    if let Ok(line) = line { line } else { String::from("") }
+    if let Ok(line) = line {
+        line
+    } else {
+        String::from("")
+    }
 }
 
 fn is_unique_5_letter(word: &String) -> bool {
@@ -51,7 +59,9 @@ fn is_unique_5_letter(word: &String) -> bool {
     }
     // Check how many unique chars is there in word
     // TODO: consider using a different method to avoid the set allocation
-    let mut chars : HashSet<char> = HashSet::new();
-    s.chars().for_each(|ch| { chars.insert(ch.clone()); });
+    let mut chars: HashSet<char> = HashSet::new();
+    s.chars().for_each(|ch| {
+        chars.insert(ch.clone());
+    });
     return chars.len() == 5;
 }
