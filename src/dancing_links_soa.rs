@@ -5,8 +5,6 @@ use prettytable::{Cell, Row, Table};
 
 use std::collections::{HashMap, HashSet};
 
-type DLPtr = usize;
-
 enum Dir {
     Up,
     Right,
@@ -16,41 +14,14 @@ enum Dir {
 
 #[derive(Debug)]
 pub struct DLMatrix {
-    arena: Vec<DLNode>,
-    columns: HashMap<usize, DLPtr>, // column node for given x
-    rows: HashMap<usize, DLPtr>,    // first cell for given y
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct DLNode {
-    right: DLPtr,
-    left: DLPtr,
-    up: DLPtr,
-    down: DLPtr,
-    column: DLPtr, // used as x if the node is column header
-    y: isize,      // used as size if the node is column header, i.e. when the value is < 0
-}
-
-impl DLNode {
-    #[inline]
-    fn set(&mut self, direction: Dir, ptr: DLPtr) {
-        match direction {
-            Dir::Up => self.up = ptr,
-            Dir::Right => self.right = ptr,
-            Dir::Down => self.down = ptr,
-            Dir::Left => self.left = ptr,
-        }
-    }
-
-    #[inline]
-    fn get(&self, direction: Dir) -> DLPtr {
-        match direction {
-            Dir::Up => self.up,
-            Dir::Right => self.right,
-            Dir::Down => self.down,
-            Dir::Left => self.left,
-        }
-    }
+    right: Vec<usize>,
+    left: Vec<usize>,
+    up: Vec<usize>,
+    down: Vec<usize>,
+    column: Vec<usize>, // used as x if the node is column header
+    y: Vec<isize>,  // used as size if the node is column header, i.e. when the value is < 0
+    columns: HashMap<usize, usize>, // column node for given x
+    rows: HashMap<usize, usize>,    // first cell for given y
 }
 
 impl DLMatrix {
@@ -59,101 +30,97 @@ impl DLMatrix {
     }
 
     pub fn new_with_capacity(initial_capacity: usize) -> Self {
-        let root = DLNode {
-            right: 0,
-            left: 0,
-            up: 0,
-            down: 0,
-            column: 0,
-            y: 0,
-        };
-        let mut arena = Vec::with_capacity(initial_capacity);
-        arena.push(root);
         DLMatrix {
-            arena,
             columns: HashMap::new(),
             rows: HashMap::new(),
+            right: vec![0],
+            left: vec![0],
+            up: vec![0],
+            down: vec![0],
+            column: vec![0],
+            y: vec![0],
+        }
+    }
+
+    fn set(&mut self, src: usize, direction: Dir, dst: usize) {
+        match direction {
+            Dir::Up => self.up[src] = dst,
+            Dir::Right => self.right[src] = dst,
+            Dir::Down => self.down[src] = dst,
+            Dir::Left => self.left[src] = dst,
         }
     }
 
     #[inline]
-    fn get_node_mut(&mut self, ptr: DLPtr) -> &mut DLNode {
-        self.arena.get_mut(ptr).unwrap()
+    fn get_neigh_ptr(&self, ptr: usize, direction: Dir) -> usize {
+        match direction {
+            Dir::Up => self.up[ptr],
+            Dir::Right => self.right[ptr],
+            Dir::Down => self.down[ptr],
+            Dir::Left => self.left[ptr],
+        }
     }
 
     #[inline]
-    fn get_node(&self, ptr: DLPtr) -> &DLNode {
-        self.arena.get(ptr).unwrap()
-    }
-
-    #[inline]
-    fn get_neigh_ptr(&self, ptr: DLPtr, direction: Dir) -> DLPtr {
-        self.get_node(ptr).get(direction)
-    }
-
-    #[inline]
-    fn get_neigh_node_mut(&mut self, ptr: DLPtr, direction: Dir) -> &mut DLNode {
-        self.get_node_mut(self.get_neigh_ptr(ptr, direction))
-    }
-
-    #[inline]
-    fn get_column_ptr(&self, ptr: DLPtr) -> DLPtr {
-        let node = self.get_node(ptr);
-        if node.y < 0 {
+    fn get_column_ptr(&self, ptr: usize) -> usize {
+        let y = self.y[ptr];
+        if y < 0 {
             ptr
         } else {
-            node.column
+            self.column[ptr]
         }
-    }
-
-    #[inline]
-    fn root(&self) -> &DLNode {
-        self.arena.get(0).unwrap()
     }
 
     #[inline(always)]
-    fn root_ptr(&self) -> DLPtr {
+    fn root_ptr(&self) -> usize {
         0
     }
 
-    // new_node_factory(ptr) must return a DLNode struct that has valid pointers in its nav element
-    fn add_node<F>(&mut self, new_node_factory: F) -> DLPtr
-    where
-        F: Fn(DLPtr) -> DLNode,
+    // new_node_factory(ptr) must return a DLNode struct that has valid pointers
+    fn add_node<F>(&mut self, f: F) -> usize
+    where F: Fn(usize) -> (usize, usize, usize, usize, usize, isize)
     {
-        let ptr = self.arena.len();
-        self.arena.push(new_node_factory(ptr));
-        self.get_neigh_node_mut(ptr, Dir::Left).set(Dir::Right, ptr);
-        self.get_neigh_node_mut(ptr, Dir::Right).set(Dir::Left, ptr);
-        self.get_neigh_node_mut(ptr, Dir::Up).set(Dir::Down, ptr);
-        self.get_neigh_node_mut(ptr, Dir::Down).set(Dir::Up, ptr);
+        let ptr = self.y.len();
+        let (left, up, right, down, column, y) = f(ptr);
+        self.left.push(left);
+        self.up.push(up);
+        self.right.push(right);
+        self.down.push(down);
+        self.y.push(y);
+        self.column.push(column);
+
+        self.set(self.get_neigh_ptr(ptr, Dir::Left), Dir::Right, ptr);
+        self.set(self.get_neigh_ptr(ptr, Dir::Up), Dir::Down, ptr);
+        self.set(self.get_neigh_ptr(ptr, Dir::Right), Dir::Left, ptr);
+        self.set(self.get_neigh_ptr(ptr, Dir::Down), Dir::Up, ptr);
+
         ptr
     }
 
-    fn add_column(&mut self, x: usize) -> DLPtr {
+    fn add_column(&mut self, x: usize) -> usize {
         if self.columns.contains_key(&x) {
             return *self.columns.get(&x).unwrap();
         }
-        let (root_left_ptr, root_ptr) = (self.root().get(Dir::Left), self.root_ptr());
-        let ptr = self.add_node(|ptr| DLNode {
-            left: root_left_ptr,
-            right: root_ptr,
-            up: ptr,
-            down: ptr,
-            column: x,
-            y: -1,
+        let (root_left_ptr, root_ptr) = (self.get_neigh_ptr(self.root_ptr(), Dir::Left), self.root_ptr());
+        let ptr = self.add_node(|ptr| {
+            (root_left_ptr,
+            ptr,
+            root_ptr,
+            ptr,
+            x,
+            -1)
         });
         self.columns.insert(x, ptr);
         ptr
     }
 
-    fn add_cell(&mut self, x: usize, y: usize) -> DLPtr {
+    fn add_cell(&mut self, x: usize, y: usize) -> usize {
         let col_ptr = if !self.columns.contains_key(&x) {
             self.add_column(x)
         } else {
             *self.columns.get(&x).unwrap()
         };
-        self.get_node_mut(col_ptr).y -= 1; // Increase size by one; TODO: separate to a different function
+        self.y[col_ptr] -= 1; // Increase size by one; TODO: separate to a different function
         let col_up_ptr = self.get_neigh_ptr(col_ptr, Dir::Up);
 
         let row_ptrs = if self.rows.contains_key(&y) {
@@ -164,14 +131,14 @@ impl DLMatrix {
             (None, None)
         };
 
-        let ptr = self.add_node(|ptr| DLNode {
-            left: row_ptrs.1.unwrap_or(ptr),
-            right: row_ptrs.0.unwrap_or(ptr),
-            up: col_up_ptr,
-            down: col_ptr,
-            column: col_ptr,
-            y: y.try_into().unwrap(),
-        });
+        let ptr = self.add_node(|ptr| (
+            row_ptrs.1.unwrap_or(ptr),
+            col_up_ptr,
+            row_ptrs.0.unwrap_or(ptr),
+            col_ptr,
+            col_ptr,
+            y.try_into().unwrap(),
+        ));
 
         if row_ptrs == (None, None) {
             self.rows.insert(y, ptr);
@@ -230,7 +197,7 @@ impl DLMatrix {
         }*/
     }
     /*
-        fn node_sanity_check(&self, ptr: DLPtr) {
+        fn node_sanity_check(&self, ptr: usize) {
             if self
                 .get_neigh_ptr(self.get_neigh_ptr(ptr, Dir::Left).unwrap(), Dir::Right)
                 .unwrap()
@@ -262,7 +229,7 @@ impl DLMatrix {
             }
         }
 
-        fn column_sanity_check(&self, col_ptr: DLPtr) {
+        fn column_sanity_check(&self, col_ptr: usize) {
             let mut j = col_ptr;
             let mut ctr = 0;
             loop {
@@ -284,49 +251,49 @@ impl DLMatrix {
             };
         }
     */
-    fn unlink_left_right(&mut self, ptr: DLPtr) {
+    fn unlink_left_right(&mut self, ptr: usize) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
         let right = self.get_neigh_ptr(ptr, Dir::Right);
-        self.get_node_mut(right).set(Dir::Left, left);
-        self.get_node_mut(left).set(Dir::Right, right);
+        self.set(right, Dir::Left, left);
+        self.set(left, Dir::Right, right);
     }
 
-    fn relink_left_right(&mut self, ptr: DLPtr) {
+    fn relink_left_right(&mut self, ptr: usize) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
         let right = self.get_neigh_ptr(ptr, Dir::Right);
-        self.get_node_mut(right).set(Dir::Left, ptr);
-        self.get_node_mut(left).set(Dir::Right, ptr);
+        self.set(right, Dir::Left, ptr);
+        self.set(left, Dir::Right, ptr);
     }
 
-    fn unlink_up_down(&mut self, ptr: DLPtr) {
+    fn unlink_up_down(&mut self, ptr: usize) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
         let down = self.get_neigh_ptr(ptr, Dir::Down);
-        self.get_node_mut(down).set(Dir::Up, up);
-        self.get_node_mut(up).set(Dir::Down, down);
+        self.set(down, Dir::Up, up);
+        self.set(up, Dir::Down, down);
         let col = self.get_column_ptr(ptr);
         if col != ptr {
-            self.get_node_mut(ptr).y += 1; // Decrease size by one. Todo: separate function.
+            self.y[ptr] += 1; // Decrease size by one. Todo: separate function.
         }
     }
 
-    fn relink_up_down(&mut self, ptr: DLPtr) {
+    fn relink_up_down(&mut self, ptr: usize) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
         let down = self.get_neigh_ptr(ptr, Dir::Down);
-        self.get_node_mut(down).set(Dir::Up, ptr);
-        self.get_node_mut(up).set(Dir::Down, ptr);
+        self.set(down, Dir::Up, ptr);
+        self.set(up, Dir::Down, ptr);
         let col = self.get_column_ptr(ptr);
         if col != ptr {
-            self.get_node_mut(ptr).y -= 1; // Increase size by one. Todo: separate function.
+            self.y[ptr] -= 1; // Increase size by one. Todo: separate function.
         }
     }
 
     // Solution = set of columns' x coordinates
     pub fn exact_cover(&mut self) -> Vec<Vec<usize>> {
-        let mut o_vals: Vec<DLPtr> = Vec::new();
+        let mut o_vals: Vec<usize> = Vec::new();
         let mut solutions: Vec<Vec<usize>> = Vec::new();
         self.exact_cover_rec(0, &mut o_vals, &mut solutions);
         solutions
@@ -335,7 +302,7 @@ impl DLMatrix {
     fn exact_cover_rec(
         &mut self,
         k: usize,
-        partial_solution: &mut Vec<DLPtr>,
+        partial_solution: &mut Vec<usize>,
         solutions: &mut Vec<Vec<usize>>,
     ) {
         // If the matrix A has no columns, the current partial solution is a valid solution; terminate successfully.
@@ -344,7 +311,7 @@ impl DLMatrix {
             return;
         }
 
-        let c: DLPtr = self.choose_column();
+        let c: usize = self.choose_column();
 
         // Try every row r that itersects the column c: (this can be parallelized if we clone the matrix)
         let mut r = c;
@@ -386,7 +353,7 @@ impl DLMatrix {
         }
     }
 
-    fn choose_column(&self) -> DLPtr {
+    fn choose_column(&self) -> usize {
         let mut s = isize::MAX;
         let mut j = self.root_ptr();
         let mut c = j;
@@ -395,8 +362,7 @@ impl DLMatrix {
             if j == self.root_ptr() {
                 break;
             }
-            let node = self.get_node(j);
-            let size = -node.y - 1;
+            let size = -self.y[j] - 1;
             if size < s {
                 s = size;
                 c = j;
@@ -406,7 +372,7 @@ impl DLMatrix {
     }
 
     // Cover the column: delete it and all rows that intersect it.
-    fn cover(&mut self, col_ptr: DLPtr) {
+    fn cover(&mut self, col_ptr: usize) {
         self.unlink_left_right(col_ptr);
         let mut row_ptr = self.get_neigh_ptr(col_ptr, Dir::Down);
         while row_ptr != col_ptr {
@@ -420,7 +386,7 @@ impl DLMatrix {
     }
 
     // Uncover the column: undelete it and all rows that intersect it.
-    fn uncover(&mut self, col_ptr: DLPtr) {
+    fn uncover(&mut self, col_ptr: usize) {
         let mut row_ptr = self.get_neigh_ptr(col_ptr, Dir::Up);
         while row_ptr != col_ptr {
             let mut j = self.get_neigh_ptr(row_ptr, Dir::Left);
@@ -434,10 +400,10 @@ impl DLMatrix {
         self.relink_left_right(col_ptr);
     }
 
-    fn current_solution(&mut self, partial_solution: &mut Vec<DLPtr>) -> Vec<usize> {
+    fn current_solution(&mut self, partial_solution: &mut Vec<usize>) -> Vec<usize> {
         let mut res: Vec<usize> = Vec::new();
         for &ptr in partial_solution.iter() {
-            res.push(self.get_node(ptr).y as usize);
+            res.push(self.y[ptr] as usize);
         }
         res
     }
@@ -454,7 +420,7 @@ impl DLMatrix {
             if col_ptr == root_ptr {
                 break;
             }
-            let x = self.get_node(col_ptr).column;
+            let x = self.column[col_ptr];
             columns.insert(x, col_ptr);
             if x > max_x {
                 max_x = x;
@@ -466,7 +432,7 @@ impl DLMatrix {
                 if ptr == col_ptr {
                     break;
                 }
-                let y = self.get_node(ptr).y;
+                let y = self.y[ptr];
                 cells.insert((x, y), ptr);
                 if y > max_y {
                     max_y = y;
