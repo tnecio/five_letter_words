@@ -1,7 +1,8 @@
 extern crate prettytable;
 
 mod backtracking_brute;
-mod dancing_links;
+// mod dancing_links;
+mod dancing_links_soa;
 mod smart_brute;
 mod word_reprs;
 
@@ -13,8 +14,8 @@ use std::io::BufReader;
 use std::path::Path;
 
 use crate::backtracking_brute::{backtracking_brute, backtracking_brute_parallelized};
+use crate::dancing_links_soa::dlx_words;
 use crate::smart_brute::smart_brute;
-use crate::dancing_links::dlx_words;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
