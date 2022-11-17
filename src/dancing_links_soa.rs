@@ -18,18 +18,14 @@ pub struct DLMatrix {
     left: Vec<usize>,
     up: Vec<usize>,
     down: Vec<usize>,
-    column: Vec<usize>, // used as x if the node is column header
-    y: Vec<isize>,  // used as size if the node is column header, i.e. when the value is < 0
+    column: Vec<usize>,             // used as x if the node is column header
+    y: Vec<isize>, // used as size if the node is column header, i.e. when the value is < 0
     columns: HashMap<usize, usize>, // column node for given x
-    rows: HashMap<usize, usize>,    // first cell for given y
+    rows: HashMap<usize, usize>, // first cell for given y
 }
 
 impl DLMatrix {
     pub fn new() -> Self {
-        Self::new_with_capacity(256)
-    }
-
-    pub fn new_with_capacity(initial_capacity: usize) -> Self {
         DLMatrix {
             columns: HashMap::new(),
             rows: HashMap::new(),
@@ -78,7 +74,8 @@ impl DLMatrix {
 
     // new_node_factory(ptr) must return a DLNode struct that has valid pointers
     fn add_node<F>(&mut self, f: F) -> usize
-    where F: Fn(usize) -> (usize, usize, usize, usize, usize, isize)
+    where
+        F: Fn(usize) -> (usize, usize, usize, usize, usize, isize),
     {
         let ptr = self.y.len();
         let (left, up, right, down, column, y) = f(ptr);
@@ -101,15 +98,11 @@ impl DLMatrix {
         if self.columns.contains_key(&x) {
             return *self.columns.get(&x).unwrap();
         }
-        let (root_left_ptr, root_ptr) = (self.get_neigh_ptr(self.root_ptr(), Dir::Left), self.root_ptr());
-        let ptr = self.add_node(|ptr| {
-            (root_left_ptr,
-            ptr,
-            root_ptr,
-            ptr,
-            x,
-            -1)
-        });
+        let (root_left_ptr, root_ptr) = (
+            self.get_neigh_ptr(self.root_ptr(), Dir::Left),
+            self.root_ptr(),
+        );
+        let ptr = self.add_node(|ptr| (root_left_ptr, ptr, root_ptr, ptr, x, -1));
         self.columns.insert(x, ptr);
         ptr
     }
@@ -131,14 +124,16 @@ impl DLMatrix {
             (None, None)
         };
 
-        let ptr = self.add_node(|ptr| (
-            row_ptrs.1.unwrap_or(ptr),
-            col_up_ptr,
-            row_ptrs.0.unwrap_or(ptr),
-            col_ptr,
-            col_ptr,
-            y.try_into().unwrap(),
-        ));
+        let ptr = self.add_node(|ptr| {
+            (
+                row_ptrs.1.unwrap_or(ptr),
+                col_up_ptr,
+                row_ptrs.0.unwrap_or(ptr),
+                col_ptr,
+                col_ptr,
+                y.try_into().unwrap(),
+            )
+        });
 
         if row_ptrs == (None, None) {
             self.rows.insert(y, ptr);
@@ -628,60 +623,33 @@ fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 }
 
 pub fn dlx_words(words: Vec<String>) {
-    let all_columns: Vec<Vec<bool>> = (b'a'..=b'z')
-        .map(|b| {
-            let ch = b as char;
-            words.iter().map(|w| w.contains(ch)).collect::<Vec<bool>>()
-        })
+    let mut rows: Vec<Vec<bool>> = words
+        .iter()
+        .map(|w| (b'a'..=b'z').map(|b| w.contains(b as char)).collect())
         .collect();
 
-    let dummy_row = vec![true; 26 - 1];
+    for row in rows.iter_mut() {
+        row.push(false); // Column for 1-letter long dummy
+                         // We need a dummy because we need to cover all 26 letters
+                         // The last column of the matrix will represent "is this row a dummy". We need exactly one dummy row in each solution.
+    }
+    for dummy_letter in b'a'..=b'z' {
+        let mut dummy_row: Vec<bool> = (b'a'..=b'z').map(|b| b == dummy_letter).collect();
+        dummy_row.push(true);
+        rows.push(dummy_row);
+    }
 
-    let mut ctr = 0;
-    for left_out in 0..26 {
-        eprintln!("{}", (left_out + b'a') as char);
-
-        // Remove column corresponding to the left out letter
-        let columns: Vec<Vec<bool>> = all_columns
-            .clone()
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _)| *i != left_out.into())
-            .map(|(_i, c)| c)
-            .collect();
-
-        // Remove words containing the left out letter
-        let left_out_column: &Vec<bool> = all_columns.get(left_out as usize).unwrap();
-        let left_out_rows: HashSet<usize> = left_out_column
-            .iter()
-            .enumerate()
-            .filter(|(_i, b)| **b)
-            .map(|(i, _b)| i)
-            .collect();
-        let mut rows: Vec<Vec<bool>> = transpose(columns)
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _r)| !left_out_rows.contains(i))
-            .map(|(_i, r)| r)
-            .collect();
-
-        // Ensure every column will be created in the matrix
-        rows.push(dummy_row.clone());
-
-        // Construct the matrix and run exact cover
-        let mut dlm = DLMatrix::from_bool_rows(&rows);
-        let solutions = dlm.exact_cover();
-        for solution in solutions {
-            if solution.len() == 1 && solution[0] == rows.len() - 1 {
-                // This is the dummy row
+    // Construct the matrix and run exact cover
+    let mut dlm = DLMatrix::from_bool_rows(&rows);
+    let solutions = dlm.exact_cover();
+    for solution in solutions.iter() {
+        for index in solution {
+            if *index >= words.len() {
                 continue;
             }
-            for index in solution {
-                print!("{} ", words[index].as_str());
-            }
-            println!("");
-            ctr += 1;
+            print!("{} ", words[*index].as_str());
         }
+        println!("");
     }
-    dbg!(ctr);
+    println!("Solutions count: {}", solutions.len());
 }
