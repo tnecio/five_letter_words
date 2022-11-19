@@ -1,9 +1,12 @@
 // DL = Dancing Links
 // SoA = implemented using Struct-of-Arrays approach
 
+use itertools::Itertools;
 use prettytable::{Cell, Row, Table};
+use std::collections::HashMap;
+use std::io::prelude::*;
 
-use std::collections::{HashMap, HashSet};
+use crate::word_reprs::build_word_representations;
 
 enum Dir {
     Up,
@@ -14,14 +17,14 @@ enum Dir {
 
 #[derive(Debug)]
 pub struct DLMatrix {
-    right: Vec<usize>,
-    left: Vec<usize>,
-    up: Vec<usize>,
-    down: Vec<usize>,
-    column: Vec<usize>,             // used as x if the node is column header
-    y: Vec<isize>, // used as size if the node is column header, i.e. when the value is < 0
-    columns: HashMap<usize, usize>, // column node for given x
-    rows: HashMap<usize, usize>, // first cell for given y
+    right: Vec<u16>,
+    left: Vec<u16>,
+    up: Vec<u16>,
+    down: Vec<u16>,
+    column: Vec<u16>,           // used as x if the node is column header
+    y: Vec<i16>, // used as size if the node is column header, i.e. when the value is < 0
+    columns: HashMap<u16, u16>, // column node for given x
+    rows: HashMap<u16, u16>, // first cell for given y
 }
 
 impl DLMatrix {
@@ -38,46 +41,46 @@ impl DLMatrix {
         }
     }
 
-    fn set(&mut self, src: usize, direction: Dir, dst: usize) {
+    fn set(&mut self, src: u16, direction: Dir, dst: u16) {
         match direction {
-            Dir::Up => self.up[src] = dst,
-            Dir::Right => self.right[src] = dst,
-            Dir::Down => self.down[src] = dst,
-            Dir::Left => self.left[src] = dst,
+            Dir::Up => self.up[src as usize] = dst,
+            Dir::Right => self.right[src as usize] = dst,
+            Dir::Down => self.down[src as usize] = dst,
+            Dir::Left => self.left[src as usize] = dst,
         }
     }
 
     #[inline]
-    fn get_neigh_ptr(&self, ptr: usize, direction: Dir) -> usize {
+    fn get_neigh_ptr(&self, ptr: u16, direction: Dir) -> u16 {
         match direction {
-            Dir::Up => self.up[ptr],
-            Dir::Right => self.right[ptr],
-            Dir::Down => self.down[ptr],
-            Dir::Left => self.left[ptr],
+            Dir::Up => self.up[ptr as usize],
+            Dir::Right => self.right[ptr as usize],
+            Dir::Down => self.down[ptr as usize],
+            Dir::Left => self.left[ptr as usize],
         }
     }
 
     #[inline]
-    fn get_column_ptr(&self, ptr: usize) -> usize {
-        let y = self.y[ptr];
+    fn get_column_ptr(&self, ptr: u16) -> u16 {
+        let y = self.y[ptr as usize];
         if y < 0 {
             ptr
         } else {
-            self.column[ptr]
+            self.column[ptr as usize]
         }
     }
 
     #[inline(always)]
-    fn root_ptr(&self) -> usize {
+    fn root_ptr(&self) -> u16 {
         0
     }
 
     // new_node_factory(ptr) must return a DLNode struct that has valid pointers
-    fn add_node<F>(&mut self, f: F) -> usize
+    fn add_node<F>(&mut self, f: F) -> u16
     where
-        F: Fn(usize) -> (usize, usize, usize, usize, usize, isize),
+        F: Fn(u16) -> (u16, u16, u16, u16, u16, i16),
     {
-        let ptr = self.y.len();
+        let ptr = self.y.len() as u16;
         let (left, up, right, down, column, y) = f(ptr);
         self.left.push(left);
         self.up.push(up);
@@ -94,7 +97,7 @@ impl DLMatrix {
         ptr
     }
 
-    fn add_column(&mut self, x: usize) -> usize {
+    fn add_column(&mut self, x: u16) -> u16 {
         if self.columns.contains_key(&x) {
             return *self.columns.get(&x).unwrap();
         }
@@ -107,13 +110,13 @@ impl DLMatrix {
         ptr
     }
 
-    fn add_cell(&mut self, x: usize, y: usize) -> usize {
+    fn add_cell(&mut self, x: u16, y: u16) -> u16 {
         let col_ptr = if !self.columns.contains_key(&x) {
             self.add_column(x)
         } else {
             *self.columns.get(&x).unwrap()
         };
-        self.y[col_ptr] -= 1; // Increase size by one; TODO: separate to a different function
+        self.y[col_ptr as usize] -= 1; // Increase size by one; TODO: separate to a different function
         let col_up_ptr = self.get_neigh_ptr(col_ptr, Dir::Up);
 
         let row_ptrs = if self.rows.contains_key(&y) {
@@ -148,7 +151,7 @@ impl DLMatrix {
         for (x, column) in columns.iter().enumerate() {
             for (y, value) in column.iter().enumerate() {
                 if *value {
-                    res.add_cell(x, y);
+                    res.add_cell(x as u16, y as u16);
                 }
             }
         }
@@ -160,7 +163,7 @@ impl DLMatrix {
         for (y, row) in rows.iter().enumerate() {
             for (x, value) in row.iter().enumerate() {
                 if *value {
-                    res.add_cell(x, y);
+                    res.add_cell(x as u16, y as u16);
                 }
             }
         }
@@ -192,7 +195,7 @@ impl DLMatrix {
         }*/
     }
     /*
-        fn node_sanity_check(&self, ptr: usize) {
+        fn node_sanity_check(&self, ptr: u16) {
             if self
                 .get_neigh_ptr(self.get_neigh_ptr(ptr, Dir::Left).unwrap(), Dir::Right)
                 .unwrap()
@@ -224,7 +227,7 @@ impl DLMatrix {
             }
         }
 
-        fn column_sanity_check(&self, col_ptr: usize) {
+        fn column_sanity_check(&self, col_ptr: u16) {
             let mut j = col_ptr;
             let mut ctr = 0;
             loop {
@@ -246,7 +249,7 @@ impl DLMatrix {
             };
         }
     */
-    fn unlink_left_right(&mut self, ptr: usize) {
+    fn unlink_left_right(&mut self, ptr: u16) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
         let right = self.get_neigh_ptr(ptr, Dir::Right);
@@ -254,7 +257,7 @@ impl DLMatrix {
         self.set(left, Dir::Right, right);
     }
 
-    fn relink_left_right(&mut self, ptr: usize) {
+    fn relink_left_right(&mut self, ptr: u16) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
         let right = self.get_neigh_ptr(ptr, Dir::Right);
@@ -262,7 +265,7 @@ impl DLMatrix {
         self.set(left, Dir::Right, ptr);
     }
 
-    fn unlink_up_down(&mut self, ptr: usize) {
+    fn unlink_up_down(&mut self, ptr: u16) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
         let down = self.get_neigh_ptr(ptr, Dir::Down);
@@ -270,11 +273,11 @@ impl DLMatrix {
         self.set(up, Dir::Down, down);
         let col = self.get_column_ptr(ptr);
         if col != ptr {
-            self.y[ptr] += 1; // Decrease size by one. Todo: separate function.
+            self.y[ptr as usize] += 1; // Decrease size by one. Todo: separate function.
         }
     }
 
-    fn relink_up_down(&mut self, ptr: usize) {
+    fn relink_up_down(&mut self, ptr: u16) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
         let down = self.get_neigh_ptr(ptr, Dir::Down);
@@ -282,23 +285,23 @@ impl DLMatrix {
         self.set(up, Dir::Down, ptr);
         let col = self.get_column_ptr(ptr);
         if col != ptr {
-            self.y[ptr] -= 1; // Increase size by one. Todo: separate function.
+            self.y[ptr as usize] -= 1; // Increase size by one. Todo: separate function.
         }
     }
 
     // Solution = set of columns' x coordinates
-    pub fn exact_cover(&mut self) -> Vec<Vec<usize>> {
-        let mut o_vals: Vec<usize> = Vec::new();
-        let mut solutions: Vec<Vec<usize>> = Vec::new();
+    pub fn exact_cover(&mut self) -> Vec<Vec<u16>> {
+        let mut o_vals: Vec<u16> = Vec::new();
+        let mut solutions: Vec<Vec<u16>> = Vec::new();
         self.exact_cover_rec(0, &mut o_vals, &mut solutions);
         solutions
     }
 
     fn exact_cover_rec(
         &mut self,
-        k: usize,
-        partial_solution: &mut Vec<usize>,
-        solutions: &mut Vec<Vec<usize>>,
+        k: u16,
+        partial_solution: &mut Vec<u16>,
+        solutions: &mut Vec<Vec<u16>>,
     ) {
         // If the matrix A has no columns, the current partial solution is a valid solution; terminate successfully.
         if self.get_neigh_ptr(self.root_ptr(), Dir::Right) == self.root_ptr() {
@@ -306,7 +309,7 @@ impl DLMatrix {
             return;
         }
 
-        let c: usize = self.choose_column();
+        let c: u16 = self.choose_column();
 
         // Try every row r that itersects the column c: (this can be parallelized if we clone the matrix)
         let mut r = c;
@@ -348,8 +351,8 @@ impl DLMatrix {
         }
     }
 
-    fn choose_column(&self) -> usize {
-        let mut s = isize::MAX;
+    fn choose_column(&self) -> u16 {
+        let mut s = i16::MAX;
         let mut j = self.root_ptr();
         let mut c = j;
         loop {
@@ -357,7 +360,7 @@ impl DLMatrix {
             if j == self.root_ptr() {
                 break;
             }
-            let size = -self.y[j] - 1;
+            let size = -self.y[j as usize] - 1;
             if size < s {
                 s = size;
                 c = j;
@@ -367,7 +370,7 @@ impl DLMatrix {
     }
 
     // Cover the column: delete it and all rows that intersect it.
-    fn cover(&mut self, col_ptr: usize) {
+    fn cover(&mut self, col_ptr: u16) {
         self.unlink_left_right(col_ptr);
         let mut row_ptr = self.get_neigh_ptr(col_ptr, Dir::Down);
         while row_ptr != col_ptr {
@@ -381,7 +384,7 @@ impl DLMatrix {
     }
 
     // Uncover the column: undelete it and all rows that intersect it.
-    fn uncover(&mut self, col_ptr: usize) {
+    fn uncover(&mut self, col_ptr: u16) {
         let mut row_ptr = self.get_neigh_ptr(col_ptr, Dir::Up);
         while row_ptr != col_ptr {
             let mut j = self.get_neigh_ptr(row_ptr, Dir::Left);
@@ -395,10 +398,10 @@ impl DLMatrix {
         self.relink_left_right(col_ptr);
     }
 
-    fn current_solution(&mut self, partial_solution: &mut Vec<usize>) -> Vec<usize> {
-        let mut res: Vec<usize> = Vec::new();
+    fn current_solution(&mut self, partial_solution: &mut Vec<u16>) -> Vec<u16> {
+        let mut res: Vec<u16> = Vec::new();
         for &ptr in partial_solution.iter() {
-            res.push(self.y[ptr] as usize);
+            res.push(self.y[ptr as usize] as u16);
         }
         res
     }
@@ -415,7 +418,7 @@ impl DLMatrix {
             if col_ptr == root_ptr {
                 break;
             }
-            let x = self.column[col_ptr];
+            let x = self.column[col_ptr as usize];
             columns.insert(x, col_ptr);
             if x > max_x {
                 max_x = x;
@@ -427,7 +430,7 @@ impl DLMatrix {
                 if ptr == col_ptr {
                     break;
                 }
-                let y = self.y[ptr];
+                let y = self.y[ptr as usize];
                 cells.insert((x, y), ptr);
                 if y > max_y {
                     max_y = y;
@@ -623,9 +626,11 @@ fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 }
 
 pub fn dlx_words(words: Vec<String>) {
-    let mut rows: Vec<Vec<bool>> = words
+    let (repr_map, reprs) = build_word_representations(&words);
+
+    let mut rows: Vec<Vec<bool>> = reprs
         .iter()
-        .map(|w| (b'a'..=b'z').map(|b| w.contains(b as char)).collect())
+        .map(|w| (0..26).map(|b| (w & (1 << b)) != 0).collect())
         .collect();
 
     for row in rows.iter_mut() {
@@ -642,14 +647,32 @@ pub fn dlx_words(words: Vec<String>) {
     // Construct the matrix and run exact cover
     let mut dlm = DLMatrix::from_bool_rows(&rows);
     let solutions = dlm.exact_cover();
+    let mut ctr = 0;
     for solution in solutions.iter() {
-        for index in solution {
-            if *index >= words.len() {
-                continue;
-            }
-            print!("{} ", words[*index].as_str());
-        }
-        println!("");
+        let repr_combo: Vec<&u32> = solution
+            .iter()
+            .filter_map(|index| reprs.get(*index as usize))
+            .collect();
+        ctr += combo_pretty_print(repr_combo, &repr_map);
     }
-    println!("Solutions count: {}", solutions.len());
+    println!("Solutions count: {}", ctr);
+}
+
+/// Returns number of combos printed
+fn combo_pretty_print(combo: Vec<&u32>, reprs: &HashMap<u32, Vec<&str>>) -> usize {
+    let mut ctr = 0;
+    for word_combo in combo
+        .iter()
+        .map(|key| reprs.get(key).unwrap())
+        .multi_cartesian_product()
+    {
+        let word_combo = word_combo.into_iter().fold(String::new(), |mut acc, word| {
+            acc.push_str(word);
+            acc.push_str(" ");
+            acc
+        });
+        let _ = writeln!(std::io::stdout(), "{}", word_combo);
+        ctr += 1;
+    }
+    ctr
 }
