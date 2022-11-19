@@ -21,9 +21,10 @@ pub struct DLMatrix {
     left: Vec<u16>,
     up: Vec<u16>,
     down: Vec<u16>,
-    column: Vec<u16>,           // used as x if the node is column header
+    column: Vec<u16>,
     y: Vec<i16>, // used as size if the node is column header, i.e. when the value is < 0
     columns: HashMap<u16, u16>, // column node for given x
+    reverse_columns: HashMap<u16, u16>, // column x for given node pointer
     rows: HashMap<u16, u16>, // first cell for given y
 }
 
@@ -31,6 +32,7 @@ impl DLMatrix {
     pub fn new() -> Self {
         DLMatrix {
             columns: HashMap::new(),
+            reverse_columns: HashMap::new(),
             rows: HashMap::new(),
             right: vec![0],
             left: vec![0],
@@ -62,12 +64,7 @@ impl DLMatrix {
 
     #[inline]
     fn get_column_ptr(&self, ptr: u16) -> u16 {
-        let y = self.y[ptr as usize];
-        if y < 0 {
-            ptr
-        } else {
-            self.column[ptr as usize]
-        }
+        self.column[ptr as usize]
     }
 
     #[inline(always)]
@@ -105,8 +102,9 @@ impl DLMatrix {
             self.get_neigh_ptr(self.root_ptr(), Dir::Left),
             self.root_ptr(),
         );
-        let ptr = self.add_node(|ptr| (root_left_ptr, ptr, root_ptr, ptr, x, -1));
+        let ptr = self.add_node(|ptr| (root_left_ptr, ptr, root_ptr, ptr, ptr, -1));
         self.columns.insert(x, ptr);
+        self.reverse_columns.insert(ptr, x);
         ptr
     }
 
@@ -249,6 +247,8 @@ impl DLMatrix {
             };
         }
     */
+
+    #[inline]
     fn unlink_left_right(&mut self, ptr: u16) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
@@ -257,6 +257,7 @@ impl DLMatrix {
         self.set(left, Dir::Right, right);
     }
 
+    #[inline]
     fn relink_left_right(&mut self, ptr: u16) {
         self.sanity_check();
         let left = self.get_neigh_ptr(ptr, Dir::Left);
@@ -265,6 +266,7 @@ impl DLMatrix {
         self.set(left, Dir::Right, ptr);
     }
 
+    #[inline]
     fn unlink_up_down(&mut self, ptr: u16) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
@@ -277,6 +279,7 @@ impl DLMatrix {
         }
     }
 
+    #[inline]
     fn relink_up_down(&mut self, ptr: u16) {
         self.sanity_check();
         let up = self.get_neigh_ptr(ptr, Dir::Up);
@@ -418,7 +421,7 @@ impl DLMatrix {
             if col_ptr == root_ptr {
                 break;
             }
-            let x = self.column[col_ptr as usize];
+            let x = *self.reverse_columns.get(&col_ptr).unwrap();
             columns.insert(x, col_ptr);
             if x > max_x {
                 max_x = x;
